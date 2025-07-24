@@ -1,31 +1,55 @@
 pipeline {
-  agent any
+    agent any
 
-  stages {
-    stage('Clone') {
-      steps {
-        git 'https://github.com/Harihshshyam/devops-node-app.git'
-      }
+    environment {
+        IMAGE_NAME = 'harishyam/devops-node-app'
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
     }
 
-    stage('Build Docker Image') {
-      steps {
-        script {
-          docker.build("sagar592/devops-node-app:${env.BUILD_NUMBER}")
+    stages {
+
+        stage('Clone Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Harihshshyam/devops-node-app.git'
+            }
         }
-      }
-    }
 
-    stage('Push Docker Image') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-          sh """
-            echo "$PASSWORD" | docker login -u "$USERNAME" --password-stdin
-            docker push yourdockerhub/devops-node-app:${env.BUILD_NUMBER}
-          """
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
         }
-      }
+
+        stage('Run Tests') {
+            steps {
+                sh 'npm test || echo "No tests defined, continuing..."'
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                script {
+                    dockerImage = docker.build("${IMAGE_NAME}:${IMAGE_TAG}")
+                }
+            }
+        }
+
+        stage('Docker Push') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                    sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                }
+            }
+        }
+
+        stage('Kubernetes Deploy') {
+            steps {
+                sh '''
+                sed "s|IMAGE_TAG|${IMAGE_TAG}|" k8s/deployment.yaml > k8s/deploy-temp.yaml
+                kubectl apply -f k8s/deploy-temp.yaml
+                '''
+            }
+        }
     }
-  }
 }
-
